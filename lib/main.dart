@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 void main() {
   runApp(const WorkoutApp());
@@ -25,79 +27,73 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int? selectedMacrocycle;
-  final Map<int, List<Week>> macrocycles = {
-    1: [
-      Week(1, [
-        Workout('Workout 1', [
-          Exercise('Bench Press', 80, 10),
-          Exercise('Squats', 100, 8),
-        ]),
-        Workout('Workout 2', [
-          Exercise('Deadlift', 120, 6),
-          Exercise('Pull-ups', 0, 12),
-        ]),
-      ]),
-      Week(2, [
-        Workout('Workout 1', [
-          Exercise('Bench Press', 85, 9),
-          Exercise('Squats', 105, 7),
-        ]),
-      ]),
-      Week(3, []),
-      Week(4, []),
-    ],
-    2: [
-      Week(1, []),
-      Week(2, []),
-      Week(3, []),
-      Week(4, []),
-    ],
-    3: [
-      Week(1, []),
-      Week(2, []),
-      Week(3, []),
-      Week(4, []),
-    ],
-  };
+  List<Week> weeks = [];
+  bool isLoading = true;
+  String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchWorkouts();
+  }
+
+  Future<void> fetchWorkouts() async {
+    try {
+      final response = await http.get(Uri.parse('http://localhost:3000/workouts?startDate=2025-03-17'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          weeks = data.map((weekData) => Week.fromJson(weekData)).toList();
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load workouts: ${response.statusCode}');
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+        errorMessage = 'Error loading workouts: $e';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Workout Tracker')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: DropdownButton<int>(
-              hint: const Text('Select Macrocycle'),
-              value: selectedMacrocycle,
-              isExpanded: true,
-              items: macrocycles.keys
-                  .map((macrocycle) => DropdownMenuItem(
-                        value: macrocycle,
-                        child: Text('Macrocycle $macrocycle'),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  selectedMacrocycle = value;
-                });
-              },
-            ),
-          ),
-          if (selectedMacrocycle != null)
-            Expanded(
-              child: ListView.builder(
-                itemCount: macrocycles[selectedMacrocycle!]!.length,
-                itemBuilder: (context, index) {
-                  return WeekTile(
-                      week: macrocycles[selectedMacrocycle!]![index]);
-                },
-              ),
-            ),
-        ],
-      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : errorMessage != null
+              ? Center(child: Text(errorMessage!))
+              : ListView.builder(
+                  itemCount: weeks.length,
+                  itemBuilder: (context, weekIndex) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Text(
+                            'Week ${weeks[weekIndex].number}',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: weeks[weekIndex].workouts.length,
+                          itemBuilder: (context, workoutIndex) {
+                            return WorkoutTile(
+                                workout: weeks[weekIndex].workouts[workoutIndex]);
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
     );
   }
 }
@@ -105,49 +101,54 @@ class _HomeScreenState extends State<HomeScreen> {
 class Week {
   final int number;
   final List<Workout> workouts;
+
   Week(this.number, this.workouts);
+
+  factory Week.fromJson(Map<String, dynamic> json) {
+    return Week(
+      json['week'],
+      (json['workouts'] as List)
+          .expand((workoutList) => workoutList)
+          .map((workout) => Workout.fromJson(workout))
+          .toList(),
+    );
+  }
 }
 
 class Workout {
   final String name;
   final List<Exercise> exercises;
-  Workout(this.name, this.exercises);
+  final String startTime;
+
+  Workout(this.name, this.exercises, this.startTime);
+
+  factory Workout.fromJson(Map<String, dynamic> json) {
+    return Workout(
+      json['name'],
+      (json['exercises'] as List)
+          .map((exercise) => Exercise.fromJson(exercise))
+          .toList(),
+      json['start_time'],
+    );
+  }
 }
 
 class Exercise {
   final String name;
-  final int weight;
   final int reps;
-  Exercise(this.name, this.weight, this.reps);
-}
+  final double? rpe;
+  final int sets;
+  final double? weight;
 
-class WeekTile extends StatefulWidget {
-  final Week week;
-  const WeekTile({super.key, required this.week});
+  Exercise(this.name, this.reps, this.rpe, this.sets, this.weight);
 
-  @override
-  _WeekTileState createState() => _WeekTileState();
-}
-
-class _WeekTileState extends State<WeekTile> {
-  bool isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      color: Colors.blue[50], // Light blue for weeks
-      child: ExpansionTile(
-        title: Text('Week ${widget.week.number}'),
-        onExpansionChanged: (expanded) {
-          setState(() {
-            isExpanded = expanded;
-          });
-        },
-        children: widget.week.workouts
-            .map((workout) => WorkoutTile(workout: workout))
-            .toList(),
-      ),
+  factory Exercise.fromJson(Map<String, dynamic> json) {
+    return Exercise(
+      json['name'],
+      json['reps'],
+      json['rpe']?.toDouble(),
+      json['sets'],
+      json['weight_kg']?.toDouble(),
     );
   }
 }
@@ -166,9 +167,10 @@ class _WorkoutTileState extends State<WorkoutTile> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.green[50], // Light green for workouts
+      color: Colors.green[50],
       child: ExpansionTile(
         title: Text(widget.workout.name),
+        subtitle: Text(widget.workout.startTime),
         onExpansionChanged: (expanded) {
           setState(() {
             isExpanded = expanded;
@@ -176,11 +178,12 @@ class _WorkoutTileState extends State<WorkoutTile> {
         },
         children: widget.workout.exercises
             .map((exercise) => Container(
-                  color: Colors.yellow[50], // Light yellow for exercises
+                  color: Colors.yellow[50],
                   child: ListTile(
                     title: Text(exercise.name),
                     subtitle: Text(
-                        'Weight: ${exercise.weight}kg, Reps: ${exercise.reps}'),
+                      'Sets: ${exercise.sets}, Reps: ${exercise.reps}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}${exercise.rpe != null ? ', RPE: ${exercise.rpe}' : ''}',
+                    ),
                   ),
                 ))
             .toList(),
