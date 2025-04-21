@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const WorkoutApp());
@@ -35,6 +36,33 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCachedData(); // Carrega dados salvos ao iniciar
+  }
+
+  Future<void> _loadCachedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cachedDate = prefs.getString('startDate');
+    final cachedWeeks = prefs.getString('weeks');
+
+    if (cachedDate != null && cachedWeeks != null) {
+      setState(() {
+        _dateController.text = cachedDate;
+        weeks = (jsonDecode(cachedWeeks) as List)
+            .map((weekData) => Week.fromJson(weekData))
+            .toList();
+        isLoading = false;
+      });
+    } else {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _saveCachedData(String startDate, List<Week> weeks) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('startDate', startDate);
+    await prefs.setString('weeks', jsonEncode(weeks));
   }
 
   Future<void> fetchWorkouts(String startDate) async {
@@ -55,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }).toList();
           isLoading = false;
         });
+        await _saveCachedData(startDate, weeks); // Salva no cache
       } else {
         throw Exception('Failed to load workouts: ${response.statusCode}');
       }
@@ -171,6 +200,11 @@ class Week {
       }).toList(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'week': number,
+        'workouts': workouts.map((workout) => workout.toJson()).toList(),
+      };
 }
 
 class Workout {
@@ -191,11 +225,17 @@ class Workout {
       json['start_time'] ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'exercises': exercises.map((exercise) => exercise.toJson()).toList(),
+        'start_time': startTime,
+      };
 }
 
 class Exercise {
   final String name;
-  final List<Set> sets; // Lista de sets, cada um com setReps, setRpe, etc.
+  final List<Set> sets;
   final double? weight;
 
   Exercise(this.name, this.sets, this.weight);
@@ -206,21 +246,24 @@ class Exercise {
     return Exercise(
       json['name'] ?? 'Unknown',
       setsData.map((set) => Set.fromJson(set)).toList(),
-      json['weight_kg']?.toDouble(), // Mantém weight_kg, se presente
+      json['weight_kg']?.toDouble(),
     );
   }
 
-  // Calcula o número total de sets
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'sets': sets.map((set) => set.toJson()).toList(),
+        'weight_kg': weight,
+      };
+
   int get setCount => sets.length;
 
-  // Calcula a média de repetições (ignora null)
   double? get averageReps {
     if (sets.isEmpty) return null;
     var validReps = sets.where((set) => set.reps != null).map((set) => set.reps!).toList();
     return validReps.isEmpty ? null : validReps.reduce((a, b) => a + b) / validReps.length;
   }
 
-  // Obtém o RPE médio (ignora null)
   double? get averageRpe {
     if (sets.isEmpty) return null;
     var validRpe = sets.where((set) => set.rpe != null).map((set) => set.rpe!).toList();
@@ -244,6 +287,13 @@ class Set {
       json['setWeightKg']?.toDouble(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'setReps': reps,
+        'setRpe': rpe,
+        'setType': type,
+        'setWeightKg': weight,
+      };
 }
 
 class WorkoutTile extends StatefulWidget {
