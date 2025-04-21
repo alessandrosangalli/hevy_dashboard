@@ -36,23 +36,37 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCachedData(); // Carrega dados salvos ao iniciar
+    print('[INIT] Initializing HomeScreen state');
+    _loadCachedData();
   }
 
   Future<void> _loadCachedData() async {
+    print('[CACHE] Loading cached data');
     final prefs = await SharedPreferences.getInstance();
     final cachedDate = prefs.getString('startDate');
     final cachedWeeks = prefs.getString('weeks');
 
     if (cachedDate != null && cachedWeeks != null) {
-      setState(() {
-        _dateController.text = cachedDate;
-        weeks = (jsonDecode(cachedWeeks) as List)
-            .map((weekData) => Week.fromJson(weekData))
-            .toList();
-        isLoading = false;
-      });
+      print('[CACHE] Found cached data: startDate=$cachedDate, weeks length=${cachedWeeks.length}');
+      try {
+        setState(() {
+          _dateController.text = cachedDate;
+          weeks = (jsonDecode(cachedWeeks) as List)
+              .map((weekData) => Week.fromJson(weekData))
+              .toList();
+          isLoading = false;
+          print('[UI] Loaded ${weeks.length} weeks from cache into UI');
+        });
+      } catch (e, stackTrace) {
+        print('[CACHE ERROR] Failed to parse cached weeks: $e');
+        print('[CACHE ERROR] StackTrace: $stackTrace');
+        setState(() {
+          isLoading = false;
+          errorMessage = 'Failed to load cached data: $e';
+        });
+      }
     } else {
+      print('[CACHE] No cached data found');
       setState(() {
         isLoading = false;
       });
@@ -60,45 +74,88 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _saveCachedData(String startDate, List<Week> weeks) async {
+    print('[CACHE] Saving data to cache: startDate=$startDate, weeks count=${weeks.length}');
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('startDate', startDate);
-    await prefs.setString('weeks', jsonEncode(weeks));
+    try {
+      await prefs.setString('startDate', startDate);
+      await prefs.setString('weeks', jsonEncode(weeks));
+      print('[CACHE] Successfully saved data to cache');
+    } catch (e, stackTrace) {
+      print('[CACHE ERROR] Failed to save data to cache: $e');
+      print('[CACHE ERROR] StackTrace: $stackTrace');
+    }
   }
 
   Future<void> fetchWorkouts(String startDate) async {
+    print('[FETCH] Starting fetchWorkouts for startDate=$startDate');
+    final prefs = await SharedPreferences.getInstance();
+    final cachedDate = prefs.getString('startDate');
+    final cachedWeeks = prefs.getString('weeks');
+
+    // Verifica se a startDate é a mesma do cache e se há dados salvos
+    if (startDate == cachedDate && cachedWeeks != null) {
+      print('[CACHE] Using cached data for startDate=$startDate, cached weeks length=${cachedWeeks.length}');
+      try {
+        setState(() {
+          weeks = (jsonDecode(cachedWeeks) as List)
+              .map((weekData) => Week.fromJson(weekData))
+              .toList();
+          isLoading = false;
+          print('[UI] Loaded ${weeks.length} weeks from cache into UI');
+        });
+      } catch (e, stackTrace) {
+        print('[CACHE ERROR] Failed to parse cached weeks: $e');
+        print('[CACHE ERROR] StackTrace: $stackTrace');
+        setState(() {
+          isLoading = false;
+          errorMessage = 'Failed to load cached data: $e';
+        });
+      }
+      return;
+    }
+
+    // Chama a API se a startDate mudou ou não há cache
+    print('[API] Calling API for startDate=$startDate');
     setState(() {
       isLoading = true;
       errorMessage = null;
+      print('[UI] Set isLoading=true, cleared errorMessage');
     });
 
     try {
-      final response = await http.get(Uri.parse('https://hevy-dashboard-api-6f642e263370.herokuapp.com/workouts?startDate=$startDate'));
+      final url = 'https://hevy-dashboard-api-6f642e263370.herokuapp.com/workouts?startDate=$startDate';
+      print('[API] Request URL: $url');
+      final response = await http.get(Uri.parse(url));
+      print('[API] Response status code: ${response.statusCode}');
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        print('JSON Response: $data');
+        print('[JSON] API Response: ${data.length} weeks received');
         setState(() {
           weeks = data.map((weekData) {
-            print('Parsing week: $weekData');
+            print('[JSON] Parsing week: $weekData');
             return Week.fromJson(weekData);
           }).toList();
           isLoading = false;
+          print('[UI] Loaded ${weeks.length} weeks from API into UI');
         });
-        await _saveCachedData(startDate, weeks); // Salva no cache
+        await _saveCachedData(startDate, weeks);
       } else {
         throw Exception('Failed to load workouts: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      print('Error loading workouts: $e');
-      print('StackTrace: $stackTrace');
+      print('[API ERROR] Error loading workouts: $e');
+      print('[API ERROR] StackTrace: $stackTrace');
       setState(() {
         isLoading = false;
         errorMessage = 'Error loading workouts: $e';
+        print('[UI] Set isLoading=false, errorMessage=$errorMessage');
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    print('[UI] Building HomeScreen, isLoading=$isLoading, weeks count=${weeks.length}, errorMessage=$errorMessage');
     return Scaffold(
       appBar: AppBar(title: const Text('Workout Tracker')),
       body: Column(
@@ -121,7 +178,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () {
                     final startDate = _dateController.text;
                     if (startDate.isNotEmpty) {
+                      print('[UI] FetchWorkouts triggered with startDate=$startDate');
                       fetchWorkouts(startDate);
+                    } else {
+                      print('[UI] FetchWorkouts skipped: startDate is empty');
                     }
                   },
                   child: const Text('Fetch Workouts'),
@@ -137,6 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     : ListView.builder(
                         itemCount: weeks.length,
                         itemBuilder: (context, weekIndex) {
+                          print('[UI] Building week index=$weekIndex, week number=${weeks[weekIndex].number}');
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -157,6 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 physics: const NeverScrollableScrollPhysics(),
                                 itemCount: weeks[weekIndex].workouts.length,
                                 itemBuilder: (context, workoutIndex) {
+                                  print('[UI] Building workout index=$workoutIndex, name=${weeks[weekIndex].workouts[workoutIndex].name}');
                                   return WorkoutTile(
                                       workout: weeks[weekIndex]
                                           .workouts[workoutIndex]);
@@ -180,22 +242,25 @@ class Week {
   Week(this.number, this.workouts);
 
   factory Week.fromJson(Map<String, dynamic> json) {
-    print('Week JSON: $json');
+    print('[JSON] Parsing Week JSON: $json');
     var workoutsData = json['workouts'];
     List<dynamic> workoutList;
 
     if (workoutsData is List) {
+      print('[JSON] Workouts is List, length=${workoutsData.length}');
       workoutList = workoutsData;
     } else if (workoutsData is Map<String, dynamic>) {
+      print('[JSON] Workouts is Map, extracting first value');
       workoutList = workoutsData.values.first as List<dynamic>;
     } else {
+      print('[JSON ERROR] Unexpected workouts format: $workoutsData');
       throw Exception('Unexpected workouts format: $workoutsData');
     }
 
     return Week(
       json['week'],
       workoutList.map((workout) {
-        print('Parsing workout: $workout');
+        print('[JSON] Parsing workout in Week: $workout');
         return Workout.fromJson(workout);
       }).toList(),
     );
@@ -215,11 +280,11 @@ class Workout {
   Workout(this.name, this.exercises, this.startTime);
 
   factory Workout.fromJson(Map<String, dynamic> json) {
-    print('Workout JSON: $json');
+    print('[JSON] Parsing Workout JSON: $json');
     return Workout(
       json['name'] ?? 'Unknown',
       (json['exercises'] as List? ?? []).map((exercise) {
-        print('Parsing exercise: $exercise');
+        print('[JSON] Parsing exercise in Workout: $exercise');
         return Exercise.fromJson(exercise);
       }).toList(),
       json['start_time'] ?? '',
@@ -241,11 +306,15 @@ class Exercise {
   Exercise(this.name, this.sets, this.weight);
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
-    print('Exercise JSON: $json');
+    print('[JSON] Parsing Exercise JSON: $json');
     var setsData = json['sets'] as List<dynamic>? ?? [];
+    print('[JSON] Exercise sets count: ${setsData.length}');
     return Exercise(
       json['name'] ?? 'Unknown',
-      setsData.map((set) => Set.fromJson(set)).toList(),
+      setsData.map((set) {
+        print('[JSON] Parsing set in Exercise: $set');
+        return Set.fromJson(set);
+      }).toList(),
       json['weight_kg']?.toDouble(),
     );
   }
@@ -280,6 +349,7 @@ class Set {
   Set(this.reps, this.rpe, this.type, this.weight);
 
   factory Set.fromJson(Map<String, dynamic> json) {
+    print('[JSON] Parsing Set JSON: $json');
     return Set(
       json['setReps'],
       json['setRpe']?.toDouble(),
@@ -309,6 +379,7 @@ class _WorkoutTileState extends State<WorkoutTile> {
 
   @override
   Widget build(BuildContext context) {
+    print('[UI] Building WorkoutTile for workout: ${widget.workout.name}');
     return Container(
       color: Colors.green[50],
       child: ExpansionTile(
@@ -317,18 +388,22 @@ class _WorkoutTileState extends State<WorkoutTile> {
         onExpansionChanged: (expanded) {
           setState(() {
             isExpanded = expanded;
+            print('[UI] ExpansionTile changed: isExpanded=$isExpanded');
           });
         },
         children: widget.workout.exercises
-            .map((exercise) => Container(
-                  color: Colors.yellow[50],
-                  child: ListTile(
-                    title: Text(exercise.name),
-                    subtitle: Text(
-                      'Sets: ${exercise.setCount}, Avg Reps: ${exercise.averageReps?.toStringAsFixed(1) ?? 'N/A'}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}${exercise.averageRpe != null ? ', Avg RPE: ${exercise.averageRpe}' : ''}',
-                    ),
+            .map((exercise) {
+              print('[UI] Building ListTile for exercise: ${exercise.name}');
+              return Container(
+                color: Colors.yellow[50],
+                child: ListTile(
+                  title: Text(exercise.name),
+                  subtitle: Text(
+                    'Sets: ${exercise.setCount}, Avg Reps: ${exercise.averageReps?.toStringAsFixed(1) ?? 'N/A'}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}${exercise.averageRpe != null ? ', Avg RPE: ${exercise.averageRpe}' : ''}',
                   ),
-                ))
+                ),
+              );
+            })
             .toList(),
       ),
     );
