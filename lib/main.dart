@@ -398,12 +398,19 @@ class _WorkoutTileState extends State<WorkoutTile> {
         children: widget.workout.exercises
             .map((exercise) {
               print('[UI] Building ListTile for exercise: ${exercise.name}');
+              // Build a string with absolute values for each set
+              String setDetails = exercise.sets.asMap().entries.map((entry) {
+                int idx = entry.key + 1;
+                Set set = entry.value;
+                return 'Set $idx: ${set.reps ?? 'N/A'} reps, ${set.weight ?? 'N/A'}kg${set.rpe != null ? ', RPE: ${set.rpe}' : ''}';
+              }).join('; ');
+              
               return Container(
                 color: Colors.yellow[50],
                 child: ListTile(
                   title: Text(exercise.name),
                   subtitle: Text(
-                    'Sets: ${exercise.setCount}, Avg Reps: ${exercise.averageReps?.toStringAsFixed(1) ?? 'N/A'}, Avg Weight: ${exercise.averageWeight?.toStringAsFixed(1) ?? 'N/A'}kg${exercise.averageRpe != null ? ', Avg RPE: ${exercise.averageRpe}' : ''}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}',
+                    'Sets: ${exercise.setCount}${setDetails.isNotEmpty ? ', $setDetails' : ''}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}',
                   ),
                 ),
               );
