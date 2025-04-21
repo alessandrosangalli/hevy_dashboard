@@ -92,7 +92,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final cachedDate = prefs.getString('startDate');
     final cachedWeeks = prefs.getString('weeks');
 
-    // Verifica se a startDate é a mesma do cache e se há dados salvos
     if (startDate == cachedDate && cachedWeeks != null) {
       print('[CACHE] Using cached data for startDate=$startDate, cached weeks length=${cachedWeeks.length}');
       try {
@@ -114,7 +113,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // Chama a API se a startDate mudou ou não há cache
     print('[API] Calling API for startDate=$startDate');
     setState(() {
       isLoading = true;
@@ -338,6 +336,12 @@ class Exercise {
     var validRpe = sets.where((set) => set.rpe != null).map((set) => set.rpe!).toList();
     return validRpe.isEmpty ? null : validRpe.reduce((a, b) => a + b) / validRpe.length;
   }
+
+  double? get averageWeight {
+    if (sets.isEmpty) return null;
+    var validWeights = sets.where((set) => set.weight != null).map((set) => set.weight!).toList();
+    return validWeights.isEmpty ? null : validWeights.reduce((a, b) => a + b) / validWeights.length;
+  }
 }
 
 class Set {
@@ -399,7 +403,7 @@ class _WorkoutTileState extends State<WorkoutTile> {
                 child: ListTile(
                   title: Text(exercise.name),
                   subtitle: Text(
-                    'Sets: ${exercise.setCount}, Avg Reps: ${exercise.averageReps?.toStringAsFixed(1) ?? 'N/A'}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}${exercise.averageRpe != null ? ', Avg RPE: ${exercise.averageRpe}' : ''}',
+                    'Sets: ${exercise.setCount}, Avg Reps: ${exercise.averageReps?.toStringAsFixed(1) ?? 'N/A'}, Avg Weight: ${exercise.averageWeight?.toStringAsFixed(1) ?? 'N/A'}kg${exercise.averageRpe != null ? ', Avg RPE: ${exercise.averageRpe}' : ''}${exercise.weight != null ? ', Weight: ${exercise.weight}kg' : ''}',
                   ),
                 ),
               );
